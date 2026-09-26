@@ -221,12 +221,28 @@ input.sel-count{-webkit-appearance:none;appearance:none;text-align:center}
     if(!isExam){
       if(MODE==='judge')pool=pool.filter(function(b){return b.type==='判断';});
       if(MODE==='choice')pool=pool.filter(function(b){return b.type==='选择';});
+      // 练习随机洗牌
+      for(var i=pool.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=pool[i];pool[i]=pool[j];pool[j]=t;}
     }
-    // 洗牌
-    for(var i=pool.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=pool[i];pool[i]=pool[j];pool[j]=t;}
     var count = isExam ? 50 : (parseInt($('countInput').value)||10);
+    var qs;
+    if(isExam){
+      // 考试：顺序轮转取 50 题，保证每场题目不重复、覆盖全面
+      if(!DB.examOrder || DB.examOrder.length!==BANK.length){
+        DB.examOrder=BANK.map(function(b){return b.id;});
+        for(var x=DB.examOrder.length-1;x>0;x--){var y=Math.floor(Math.random()*(x+1));var z=DB.examOrder[x];DB.examOrder[x]=DB.examOrder[y];DB.examOrder[y]=z;}
+        DB.examPtr=0;
+      }
+      var ptr=DB.examPtr||0, len=DB.examOrder.length;
+      qs=[];
+      for(var k=0;k<50;k++){ var cid=DB.examOrder[(ptr+k)%len]; if(BANK[cid-1])qs.push(BANK[cid-1]); }
+      DB.examPtr=(ptr+50)%len;
+      save(DB);
+    } else {
+      qs=pool.slice(0,count);
+    }
     var sb=$('scoreBox'); if(sb)sb.style.display='none';
-    quiz={questions:pool.slice(0,count),idx:0,submitted:false,isExam:isExam,correct:0};
+    quiz={questions:qs,idx:0,submitted:false,isExam:isExam,correct:0};
     $('setupCard').style.display='none';
     $('quizCard').style.display='block';
     renderQ();
