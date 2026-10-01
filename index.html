@@ -64,6 +64,7 @@ header .sub{font-size:12px;opacity:.85;font-weight:400}
 .btn{border:none;border-radius:9px;padding:10px 20px;font-size:14px;font-weight:700;cursor:pointer}
 .btn.primary{background:var(--primary);color:#fff}
 .btn.ghost{background:#e2e8f0;color:#334155}
+.btn.elim{background:#fde68a;color:#92400e;border:1.5px solid #f59e0b}
 .btn:disabled{opacity:.5;cursor:not-allowed}
 .progress{font-size:13px;color:var(--primary);font-weight:700}
 /* wrong list */
@@ -150,9 +151,13 @@ input.sel-count{-webkit-appearance:none;appearance:none;text-align:center}
           <span style="align-self:center;font-size:14px;color:var(--muted)">快速练习（不计分）：<input class="sel-count" id="countInput" type="number" min="1" value="10"> 题</span>
         </div>
         <button class="btn primary" <button class="btn primary" onclick="startQuiz('exam')">📋 开始考试｜50题·每题2分·80分及格</button>
-        <button class="btn ghost" onclick="startQuiz('practice')">✏️ 快速练习</button>
+        <div style="display:flex;gap:8px;flex-wrap:wrap">
+          <button class="btn ghost" onclick="startQuiz('practice')" style="flex:1">✏️ 快速练习</button>
+          <button class="btn elim" onclick="window.__elim()" style="flex:1">🧨 错题歼灭 · 专刷错题</button>
+        </div>
         <div style="margin-top:10px;font-size:13px;color:var(--muted)" id="bankInfo">题库加载中…</div>
       </div>
+      <div class="card" id="elimCard" style="display:none"></div>
       <div class="card" id="quizCard" style="display:none">
         <div class="qmeta">
           <div id="qtype"></div>
@@ -168,7 +173,7 @@ input.sel-count{-webkit-appearance:none;appearance:none;text-align:center}
     <!-- 错题本 -->
     <div id="view-wrong" style="display:none">
       <div class="card">
-        <div class="sec-title">📕 错题本 <span id="wrongTotal" style="font-size:13px;color:var(--muted)"></span></div>
+        <div class="sec-title" style="display:flex;align-items:center;justify-content:space-between;gap:8px"><span>📕 错题本 <span id="wrongTotal" style="font-size:13px;color:var(--muted)"></span></span><button class="btn elim" id="wrongElimBtn" onclick="window.__elim()" style="display:none">🧨 专刷错题</button></div>
         <div id="wrongList"></div>
       </div>
     </div>
@@ -214,7 +219,7 @@ input.sel-count{-webkit-appearance:none;appearance:none;text-align:center}
   }
 
   // ---------- 练习 ----------
-  var quiz={questions:[],idx:0,submitted:false,isExam:false,correct:0};
+  var quiz={questions:[],idx:0,submitted:false,isExam:false,isElim:false,correct:0};
   function startQuiz(type){
     var isExam = type==='exam';
     var pool=BANK.slice();
@@ -292,7 +297,20 @@ input.sel-count{-webkit-appearance:none;appearance:none;text-align:center}
     var score=got*2, full=total*2, sb=$('scoreBox');
     if(sb){
       sb.style.display='block';
-      if(quiz.isExam){
+      if(quiz.isElim){
+        var sbHtml='<div class="sec-title">🧨 错题歼灭 · 本轮战果</div>'
+          +'<div class="stat-grid">'
+          +'<div class="stat"><div class="num">'+got+'</div><div class="lbl">答对 / 共'+total+'题</div></div>'
+          +'<div class="stat"><div class="num">'+(total-got)+'</div><div class="lbl">答错（仍留错题本）</div></div>'
+          +'<div class="stat"><div class="num">'+DB.wrong.length+'</div><div class="lbl">当前错题本</div></div>'
+          +'</div>';
+        if(DB.wrong.length>=10){
+          sbHtml+='<div style="margin-top:8px;color:var(--muted);font-size:14px">错题本还有 <b>'+DB.wrong.length+' 题</b>（≥10），继续出题歼灭，直至剩余少于 10 题为止。</div>'
+            +'<button class="btn elim" onclick="window.__elimAgain()" style="margin-top:10px">🎯 再歼灭一轮 · 剩余 '+DB.wrong.length+' 题</button>';
+        }
+        sb.innerHTML=sbHtml;
+        if(DB.wrong.length<10){ renderRemaining(); }
+      } else if(quiz.isExam){
         var pass = score>=80;
         DB.scores=DB.scores||[];
         DB.scores.push({date:new Date().toLocaleString(),total:total,got:got,score:score,pass:pass});
@@ -312,6 +330,57 @@ input.sel-count{-webkit-appearance:none;appearance:none;text-align:center}
     refreshBadge(); _setBankInfo(); loadStats();
   }
 
+  // ---------- 错题歼灭 ----------
+  function startEliminate(){
+    var sb=$('scoreBox'); if(sb)sb.style.display='none';
+    $('elimCard').style.display='none';
+    var wrong=DB.wrong.slice();
+    if(!wrong.length){ toast('错题本为空，先做题积累错题吧'); $('setupCard').style.display='block'; return; }
+    if(wrong.length < 10){ renderRemaining(); return; }
+    var pool=wrong.map(function(id){return BYID[id];}).filter(Boolean);
+    // 洗牌
+    for(var i=pool.length-1;i>0;i--){var j=Math.floor(Math.random()*(i+1));var t=pool[i];pool[i]=pool[j];pool[j]=t;}
+    quiz={questions:pool,idx:0,submitted:false,isExam:false,isElim:true,correct:0};
+    $('setupCard').style.display='none';
+    $('quizCard').style.display='block';
+    renderQ();
+  }
+  function renderRemaining(){
+    $('quizCard').style.display='none';
+    var list=DB.wrong.length? DB.wrong.map(function(id){return BYID[id];}).filter(Boolean) : [];
+    var h='<div class="sec-title">🧨 剩余错题（'+list.length+' 题）· 已直接展示</div>'
+      +'<div style="font-size:13px;color:var(--muted);margin-bottom:10px">错题本已不足 10 题，以下错题请对照答案与解析加强记忆。</div>';
+    if(!list.length){ h+='<div class="empty">🎉 错题本已清空！</div>'; }
+    else {
+      list.forEach(function(q){
+        var opts=q.options.map(function(o){return o[0]+'. '+o[1];}).join('<br>');
+        h+='<div class="wrong-item" style="margin:10px 0">'
+          +'<div class="wmeta">'+(q.type==='判断'?'判断题':'选择题')+'</div>'
+          +'<div class="wq">'+esc(q.question)+'</div>'
+          +'<div style="font-size:13px;color:var(--muted);margin-top:4px">'+opts+'</div>'
+          +'<div style="margin-top:6px"><b style="color:var(--ok)">✔ 正确答案：'+esc(q.answer)+'</b></div>'
+          +(q.note?'<div style="margin-top:4px;font-size:13px;color:#b45309">📌 '+esc(q.note)+'</div>':'')
+          +'</div>';
+      });
+    }
+    h+='<div style="margin-top:14px;display:flex;gap:8px;flex-wrap:wrap">'
+      +'<button class="btn primary" onclick="window.__elimAgain()">继续歼灭（重新检查）</button>'
+      +'<button class="btn ghost" onclick="window.__clearWrong()">清空错题本</button>'
+      +'<button class="btn ghost" onclick="window.__exitElim()">← 返回</button>'
+      +'</div>';
+    $('elimCard').innerHTML=h; $('elimCard').style.display='block';
+    try{ $('elimCard').scrollIntoView({behavior:'smooth'}); }catch(e){ $('elimCard').scrollIntoView(); }
+    refreshBadge(); loadStats();
+  }
+  function elimAgain(){ startEliminate(); }
+  function exitElim(){ $('elimCard').style.display='none'; $('setupCard').style.display='block'; refreshBadge(); loadStats(); }
+  function clearWrong(){
+    if(!DB.wrong.length) return;
+    if(!confirm('确定清空错题本（'+DB.wrong.length+' 题）吗？此操作不可恢复。')) return;
+    DB.wrong=[]; save(DB); refreshBadge(); loadWrong(); exitElim(); loadStats(); _setBankInfo();
+    toast('错题本已清空');
+  }
+
   // ---------- 错题本 ----------
   function refreshBadge(){ $('wrongBadge').style.display = DB.wrong.length?'inline-block':'none'; $('wrongBadge').textContent=DB.wrong.length; }
   function switchTab(tab){
@@ -323,6 +392,7 @@ input.sel-count{-webkit-appearance:none;appearance:none;text-align:center}
   function loadWrong(){
     var list=DB.wrong.map(function(id){return BYID[id];}).filter(Boolean);
     $('wrongTotal').textContent='共 '+list.length+' 题';
+    $('wrongElimBtn').style.display = list.length ? 'inline-block' : 'none';
     var box=$('wrongList');
     if(!list.length){ box.innerHTML='<div class="empty">🎉 太棒了，暂时没有错题</div>'; return; }
     box.innerHTML=list.map(function(q){
@@ -378,6 +448,7 @@ input.sel-count{-webkit-appearance:none;appearance:none;text-align:center}
   // ---------- 暴露全局 ----------
   window.__submitQ=submitQ; window.__nextQ=nextQ; window.__finish=finish; window.__retry=retry;
   window.setMode=setMode; window.startQuiz=startQuiz; window.switchTab=switchTab;
+  window.__elim=startEliminate; window.__elimAgain=elimAgain; window.__exitElim=exitElim; window.__clearWrong=clearWrong;
 
   // ---------- init ----------
   document.addEventListener('DOMContentLoaded',function(){
